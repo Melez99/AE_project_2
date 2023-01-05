@@ -1,0 +1,650 @@
+---
+title: "Advanced Econometrics Project"
+author: "Mattia Elezi"
+date: "05/05/2022"
+output:
+  pdf_document: 
+    toc: yes
+    toc_depth: 2
+    fig_width: 9
+    fig_height: 7.5
+  html_document:
+    toc: yes
+    toc_depth: 2
+    number_sections: no
+---
+
+# Introduction
+
+Panel data controls for the same entities over time throuh a time series dimension and a cross-sectional dimension.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+library(lmtest)             
+library(texreg)             
+library(tidyr)              
+library(dplyr)             
+library(pdfetch)         
+library(foreign)            
+library(car)                
+library(gplots)             
+library(tseries)            
+library(sjPlot)            
+library(huxtable)           
+library(ivreg)              
+library(plm)                
+
+rm(list=ls())
+
+```
+# Dataset
+
+The variables available in the WDI file are the following: Country (total of 192 countries), Year (from 1960 to 2015), Income Per Capita (constant 2010 US$), GDP growth (annual %), GDP Per Capita (constant 2010 US$), Oil Rents (oil rents as % of GDP), Safe Water Access (% of the population with access to safe water), Nurses Midwives (nurses and midwives per 1,000 people), Pregnant Women With Anemia (pregnant women with anemia in %), Maternal Mortality (maternal mortality ratio, modelled estimate, per 100,000 live births), Health Expenditure (total health expenditure as % of GDP), Poverty Gap (poverty gap at $1.90 a day, 2011 PPP, in %), and Infant Mortality (mortality rate, infant, per 1,000 live births).
+
+
+```{r, warning=FALSE, message=FALSE}
+
+wdi<-read.csv("C:/Users/cex/OneDrive/Desktop/panel data/wdi.csv", 
+na.strings = "NA")
+
+```
+# Pooled OLS Model
+
+The first model to be computed will be a panel model that ignores the panel effects, the data is going to be stacked and computed through OLS. The Pooled OLS model does not take into account the panel heterogeneity, ignoring the heterogeneity effect across countries, the panel effect across countries, and the fixed effect across countries. The result will be compared with the Fixed Effects (FE) and Random Effects (RE) models.
+The dependent variable is maternal mortality, the independent are the variables on the right-hand side of the regression equation.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+ pooled_OLS = plm(MaternalMortality ~ SafeWaterAccess + HealthExpenditure + 
+              PregnantWomenWithAnemia + IncomePerCapita, 
+                      data   = wdi, 
+                      index  = c("Country", "Year"), 
+                      model  = "pooling")
+
+
+ summary(pooled_OLS)
+
+```
+The panel is unbalanced due to many missing values.
+Safe water access: the higher the percentage of the population of the country that accesses safe water, the better the infrastructure leading to lower maternal mortality.
+The hypothesis is confirmed by the results. Indeed, as can be inferred from the results, the coefficient is negative. When the country has a population with more access to safe water, maternal mortality decreases at the 0.1% significance level.
+Health expenditure: the higher the total health expenditure as % of the GDP of a country, the lower maternal mortality.
+The hypothesis is rejected by the results: the coefficient is positive, and the direct relationship is counterintuitive as when the country spends more of its GDP in the health sector, the maternal mortality ratio increases at the 0.1% significance level. The reason could be an endogeneity problem or the model could be not correctly specified because fixed and panelled effects are being ignored. An instrumental variable might be required to instrumentalise the variable because it might be endogenous.
+Pregnant women with anemia: The higher the percentage of women with anemia, the higher the index of maternal mortality.
+The hypothesis is confirmed by the results as when a larger percentage of women have anemia, the country experiences an increase in the maternal mortality index at the 0.1% significance level.
+Income per capita: the higher the GDP per capita, the lower the maternal mortality ratio. The sign of the result reflects the hypothesis, but the estimate is really small and has no significance.
+
+
+
+# Fixed Effects Models
+
+## Individual Fixed Effects Model
+
+The dataset includes several indicators that could be related to maternal mortality rates such as healthcare expenditure, the proportion of the population with access to safe water, etc. However, a number of other factors could also have a profound effect on maternal mortality rates but they are either not easily available or not observable at all. Some of these factors could include a lack of awareness of preventable diseases and attitudes towards prevention or prenatal care that vary greatly from country to country but don't change over time within the same country. Without access to datasets controlling for these factors, the model would suffer from omitted variable bias. A fixed Effects (FE) model allows to control for these variables that are constant over time. The following model controls only for the within individual effect, not the time effect.
+
+```{r, warning=FALSE, message=FALSE}
+
+ fixed_effects = plm(MaternalMortality ~ SafeWaterAccess + HealthExpenditure + 
+                     PregnantWomenWithAnemia + IncomePerCapita, 
+                      data   = wdi, 
+                      index  = c("Country", "Year"), 
+                      model  = "within", 
+                      effect = "individual")
+
+
+ summary(fixed_effects)
+
+```
+Fixed effects consider the unobserved effects, and the model is partially controlling for the endogeneity problems using only individual effects.
+The direct relationship between health expenditure and maternal mortality has become negative and it is significant at the 0.1% level.
+The direct relationship between income per capita and maternal mortality has become positive and it is significant at the 0.1% level. Nevertheless, the estimate is really small.
+The adjusted R-squared is 0.25818.
+
+
+## Time Fixed Effects Model
+
+In addition to country FE, several factors could affect maternal mortality rates that are not specific to each country. For example, the development of new vaccines or medicines to fight infections, or investments in awareness campaigns by aid organizations such as WHO about preventable diseases likely vary over time but have similar effects around the world.
+The following model controls only for the within time effect.
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+ time_effects = plm(MaternalMortality ~ SafeWaterAccess + HealthExpenditure + 
+                    PregnantWomenWithAnemia + IncomePerCapita, 
+                      data = wdi, 
+                      index = c("Country", "Year"), 
+                      model = "within", 
+                      effect = "time")
+
+ summary(time_effects)
+
+```
+The results reflect the results of the pooled OLS model. The adjusted R-squared is 0.68297. nevertheless, the Time Fixed Effects model does not distinguish between observations across different countries. And the betas present unexpected signs.
+When country fixed effects are not used, the fluctuations in the series over time make it seem as if an increase in health expenditure is correlated with an increase in maternal mortality, but in fact, it is just an artifact of time fixed effects.
+
+
+The next step will be running a model that accounts for both country and time fixed effects.
+
+## Two-way Fixed Effects Model
+
+```{r, warning=FALSE, message=FALSE}
+
+  twoway_effects = plm(MaternalMortality ~ SafeWaterAccess + HealthExpenditure 
+                       + PregnantWomenWithAnemia + IncomePerCapita, 
+                          data = wdi, 
+                          index = c("Country", "Year"), 
+                          model = "within", 
+                          effect = "twoways")
+
+  summary(twoway_effects)
+
+```
+
+Once both individual (country) and time FE are included in the model, the results apart from income per capita which is positive, have the expected signs.
+
+# First Table of Comparison
+
+Subsequently, a consolidated table comparing the three FE models and the Pooled OLS model for comparison side-by-side is created.
+
+```{r, warning=FALSE, message=FALSE}
+
+
+     screenreg(list(    pooled_OLS,
+                        fixed_effects, 
+                        time_effects, 
+                        twoway_effects), 
+          
+          custom.model.names = c("Pooled OLS", 
+                                 "Country FE", 
+                                 "Time FE", 
+                                 "Two-way FE"))
+
+```
+Every explanatory variable is statistically significant in each model, apart from income per capita. The coefficients for the explanatory variable in the two-way fixed effect model are close to the country fixed effects indicating that these factors vary greatly across countries more than they do across time.
+
+
+# Two-way Random Effects Model
+
+In the RE model, the country-specific components are random and uncorrelated with the regressors. In this case, the "Two-way RE" model is computed, with both individual and time effects.
+
+```{r, warning=FALSE, message=FALSE}
+
+  RE_twoway = plm( MaternalMortality ~ SafeWaterAccess + HealthExpenditure 
+                   + PregnantWomenWithAnemia + IncomePerCapita,
+ 
+                          data   = wdi, 
+                          index  = c("Country", "Year"), 
+                          model  = "random", 
+                          effect = "twoways",
+                   random.method = "swar" )
+
+
+  summary(RE_twoway)
+
+```
+The RE model is computed by using the same function as before, but the effects are random and the country-fixed and time-fixed effects are included in the model.
+The panel is unbalanced. The signs of the coefficients, apart from income per capita, reflect the hypotheses stated at the beginning at the 0.1% significance level.
+The adjusted R-squared is 0.64495.
+
+
+# Second Table of Comparison
+
+The following step will be the creation of a table to compare the Pooled OLS model, the FE Two-way model, and the RE Two-way model.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+     screenreg(list(   pooled_OLS,
+                       twoway_effects,
+                       RE_twoway), 
+          
+          custom.model.names = c("Pooled OLS", 
+                                 "Two-way FE",
+                                 "Two-way RE" ))
+
+
+```
+
+# Lagged Dependent Variables (LDV) and Dynamic Models
+
+The model addresses auto-correlation (AR) by modelling the time dependence directly. A dynamic model takes into account whether changes in the predictor variables have an immediate effect on our dependent variable or whether the effects are distributed over time. The value of the variable in the present is used to partially explain the behaviour of the variable in the past through the lagged variable. As panel data has two dimensions, cross-sectional and time series, the autoregressive nature of the variable should be controlled to efficiently analyse the properties of the regression.
+
+```{r, warning=FALSE, message=FALSE}
+
+  ldv_model = plm(MaternalMortality ~ lag(MaternalMortality) + SafeWaterAccess 
+                  + HealthExpenditure + PregnantWomenWithAnemia 
+                  + IncomePerCapita, 
+
+                          data = wdi, 
+                         index = c("Country", "Year"), 
+                         model = "within", 
+                        effect = "twoways" )
+
+  summary(ldv_model)
+
+```
+The inclusion of the lagged variable of the dependent variable is changing the statistical significance and the signs of some variables. Health expenditure and safe water access are statistically insignificant, and income per capita does not reflect the hypothesis stated at the beginning.
+
+
+# Third Table of Comparison
+
+A table to compare the Pooled OLS model, the FE Two-way model, the RE Two-way model and the LDV model is constructed.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+     screenreg(list(   pooled_OLS,
+                       twoway_effects,
+                       RE_twoway,
+                       ldv_model), 
+          
+          custom.model.names = c("Pooled OLS", 
+                                 "Twoway FE",
+                                 "Twoway RE",
+                                 "LDV Model"))
+
+```
+
+The consolidated table compares the results of different models. The adjusted R-squared of the LDV model is much higher and therefore more significant, thanks to lagged dependent variable.
+
+The following steps will be to determine the best model to be used.
+
+
+# The Poolability Test
+
+Three tests are run comparing the three FE models with the Pooled OLS model.
+The null hypothesis is that the Pooled OLS is better than FE. In such case, the Pooled OLS  would be selected as the best analysis model as there are no significant individual FE.
+
+```{r, warning=FALSE, message=FALSE}
+
+pFtest(fixed_effects, pooled_OLS)
+
+```
+The p-value is 0. The null hypothesis is rejected as there are significant individual FE. Therefore, the FE model is better than the Pooled OLS model.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+pFtest(twoway_effects, pooled_OLS) 
+
+```
+Accounting for individual fixed effects and time effects. FE is better again.
+
+p-values are low so we reject the null hypothesis, and we use the FE model instead of Pooled OLS.
+The panel effects are statistically significant because there is heterogeneity across countries.
+
+The following step will be to check whether there are indeed any country fixed effects to begin with.
+According to the null hypothesis, there are no significant fixed effects.
+
+```{r, warning=FALSE, message=FALSE}
+
+plmtest(fixed_effects, effect="individual")
+
+
+```
+
+The p-value of 0 suggests that the null hypothesis can be rejected and that there are  indeed country fixed effects present in the Individual FE model.
+
+The following test will check if there are time fixed effects in the Time FE model.
+
+```{r, warning=FALSE, message=FALSE}
+
+plmtest(time_effects, effect="time")
+
+```
+The p-value is very high (0.9827) and thus we cannot reject the null hypothesis of no time FE. Hence, the selected model should not control for the time effects only.
+
+Therefore, it is not suggested to control for time effects only, but what about controlling for both of them at the same time?
+
+
+```{r, warning=FALSE, message=FALSE}
+
+plmtest(twoway_effects, effect="twoways")
+
+```
+
+The low p-value suggests to control for both individual and time effects in the "within" FE model.
+
+The individual FE model result suggests to control for individual effects whereas according to the time effects model results, time effects alone are not significant.
+It is necessary to control for both of them at the same time (Two-way) or to simply use the individual FE model.
+
+
+# The Hausman Test
+
+The Hausman test compares the FE and RE models, checking for the correlation between the regressors and the (individual or time) unobserved effects. The test does not give a definite answer to the question of which model to run, but it gives suggestions on the statistical significance of the RE but cannot be taken for granted because in the RE model, most of the coefficients are highly significant and therefore the Hausman test favours it.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+phtest(twoway_effects, RE_twoway)
+
+```
+The Hausman test suggests that the preferred model is the RE rather than the Two-way FE model as the null hypothesis cannot be rejected at the 5% significance level.
+
+```{r, warning=FALSE, message=FALSE}
+
+phtest(ldv_model, RE_twoway)
+
+```
+
+The Hausman test suggests that the preferred model is the LDV model which is more efficient at the 1% significance level.
+
+The p-value is not low so we cannot reject the null hypothesis and conclude that RE is better than FE, but if the lagged dependent variable (LDV) is included, then the FE model is better than the RE model.
+
+# Serial Correlation Tests
+
+As panel data has a time series dimension, we need to address the potential for serial correlation (AR) in the error term. Serial correlation in panel data will be tested with the Breusch-Godfrey test.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+pbgtest(twoway_effects)
+
+```
+The null hypothesis of no serial correlation is rejected, there is evidence of autocorrelation in the residuals in the FE Two-way model.
+
+```{r, warning=FALSE, message=FALSE}
+
+pbgtest(RE_twoway)
+
+```
+
+The null hypothesis of no serial correlation is rejected, there is evidence of autocorrelation in the residuals in the RE Two-way model.
+
+```{r, warning=FALSE, message=FALSE}
+
+pbgtest(ldv_model)
+
+```
+The null hypothesis of no serial correlation is rejected, there is evidence of autocorrelation in the residuals in the LDV model.
+
+There is evidence of serial correlation in the residuals in any test.
+
+
+# Corrections for Heteroskedasticity and Autocorrelation (HAC)
+
+
+```{r, warning=FALSE, message=FALSE}
+
+  twoway_effects_hac = coeftest(twoway_effects, 
+                                                vcov = vcovHC(twoway_effects, 
+                                              method = "arellano", 
+                                              type   = "HC3"))
+
+  twoway_effects_hac
+
+```
+
+The FE regression with two-way effects presents standard errors corrected for HC and AR.
+The standard errors are larger and some variables are not statistically significant because the standard error is larger causing the denominator of the t value to rise and the t value to decrease in absolute value causing the p-value to increase and becomes statistically insignificant.
+
+# Table of Comparison betweem Standard and Robust Errors
+
+```{r, warning=FALSE, message=FALSE}
+
+   screenreg(list(
+                  twoway_effects, 
+                  twoway_effects_hac),
+          
+                  custom.model.names = c("Twoway Fixed Effects", 
+                                         "Twoway Fixed Effects (HAC)"))
+
+
+```
+
+# Cross Sectional Dependence (XSD) Test
+
+In panel data with many countries, it is possible that there is a factor that is affecting all the countries at the same time but there is not any variable that controls for that factor. If the factor is controlled there is not any XSD but if it is not there is XSD.
+The following tests check for XSD in the Two-way FE, Two-way RE, and LDV models.
+
+
+
+```{r, warning=FALSE, message=FALSE}
+
+pcdtest(twoway_effects)
+
+```
+
+The null hypothesis of no XSD is rejected, there is evidence of XSD.
+
+```{r, warning=FALSE, message=FALSE}
+
+pcdtest(RE_twoway)
+
+```
+
+The null hypothesis of no XSD is rejected, there is evidence of XSD.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+pcdtest(ldv_model)
+
+```
+
+The null hypothesis of no XSD is rejected, there is evidence of XSD.
+
+
+# Panel Corrected Standard Errors (PCSE)
+
+If there is evidence of XSD, it is necessary to correct it through the Beck and Katz (1995) method.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+  twoway_effects_pcse = coeftest(twoway_effects, 
+                                                 vcov = vcovBK(twoway_effects, 
+                                                 type = "HC3", 
+                                              cluster = "group")) 
+
+  twoway_effects_pcse
+
+```
+# Cross-sectional and Serial Correlation (SCC)
+
+The results of the PCSE are sensitive to the ratio between the number of time periods in the dataset (T) and the total number of observations (N). The Cross-sectional and Serial Correlation (SCC) method by Driscoll and Kraay addresses the limitations of Beck and Katz's PCSE method and it is therefore preferred for obtaining Heteroskedasticity and Autocorrelation Consistent (HAC) errors that are also robust to cross-sectional dependence.
+
+```{r, warning=FALSE, message=FALSE}
+
+  twoway_effects_scc = coeftest(twoway_effects,
+                                                vcov = vcovSCC(twoway_effects, 
+                                                  type = "HC3", 
+                                               cluster = "group"))
+
+  twoway_effects_scc
+
+```
+
+The coefficient signs are as expected, apart from the income per capita, whose coefficient should be positive. Health expenditure is statistically insignificant because its effects might be incorporated into the other regressors.
+
+# Fourth Table of Comparison
+
+The third table is complemented with the HAC, PCSE and SCC results.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+         screenreg(list(
+
+                    pooled_OLS,
+                    RE_twoway, 
+                    ldv_model,
+                    twoway_effects,
+                    twoway_effects_hac, 
+                    twoway_effects_pcse, 
+                    twoway_effects_scc), 
+
+          custom.model.names = c(
+
+                    "Pooled OLS",
+                    "Twoway RE",
+                    "LDV FE",
+                    "Twoway FE",
+                    "Arellano HAC FE", 
+                    "Beck-Katz FE",
+                    "Driscoll-Kraay FE"))
+
+```
+
+# Instrumental Variables, Endogeneity, and GMM Estimation
+
+## Baseline Non-IV Model
+
+Fixed effects (FE) model with two-way effects (individual and time effects), with no instruments, is going to be our baseline model as it is the most efficient.
+
+```{r, warning=FALSE, message=FALSE}
+
+  twoway_effects = plm(MaternalMortality ~ SafeWaterAccess + HealthExpenditure 
+                       + PregnantWomenWithAnemia + IncomePerCapita, 
+
+                          data = wdi, 
+                          index = c("Country", "Year"), 
+                          model = "within", 
+                          effect = "twoways")
+
+
+  summary(twoway_effects)
+
+```
+
+The standard errors of the model are corrected for heteroscedasticity.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+coeftest(twoway_effects, vcov = vcovHC, type = "HC1")
+coeftest(twoway_effects, vcov = vcovHC, type = "HC2")
+coeftest(twoway_effects, vcov = vcovHC, type = "HC3")
+coeftest(twoway_effects, vcov = vcovHC, type = "HC4")
+
+```
+
+## Two-stage Least Squares (2SLS) with External IV Model
+
+Suppose there are reasons to believe that one of the regressors is not strictly exogenous. In this case, it would be necessary to find an instrumental variable (IV) for it. Endogeneity makes OLS estimates biased and inconsistent, and therefore must be remedied. The instrument must be correlated with the regressor but not with the error (it must be exogenous). Also, the instrument must affect the dependent variable only indirectly via the regressor, and not directly. It is necessary to have at least the same number of instruments as endogenous regressors, or maybe more IV than endogenous regressors, but not fewer instruments than endogenous regressors. The 2SLS estimator is consistent and normally distributed when the sample size is large.
+Suppose "IncomePerCapita" is endogenous to "MaternalMortality" (endogeneity problem). It is necessary to find an IV for "IncomePerCapita".  To see how 2SLS works, an external IV that is in the dataset but not already in the model will be chosen. There is an endogenous variable on the right side of the equation which is causing an endogeneity problem. The instrument must be correlated with "IncomePerCapita" but uncorrelated with the error term, hence it must be an exogenous variable. “OilRents" can be used as an IV for "IncomePerCapita". In 2SLS regression, all of the instrumental variables are used to estimate all of the regression coefficients in the model.
+
+
+```{r, warning=FALSE, message=FALSE}
+
+      Two_Stage_IV = plm(MaternalMortality ~ SafeWaterAccess + 
+                           HealthExpenditure + PregnantWomenWithAnemia 
+                         + IncomePerCapita
+
+                                       | . - IncomePerCapita + OilRents,                 
+
+
+                            data = wdi, 
+                           index = c("Country", "Year"), 
+                           model = "within", 
+                          effect = "twoways",
+                     inst.method = "bvk" )                                                                      # type of IV model
+
+
+      summary(Two_Stage_IV)
+
+```
+
+The following step will be to compute heteroskedasticity-robust standard errors.
+
+```{r, warning=FALSE, message=FALSE}
+
+coeftest(Two_Stage_IV, vcov = vcovHC, type = "HC1")
+coeftest(Two_Stage_IV, vcov = vcovHC, type = "HC2")
+coeftest(Two_Stage_IV, vcov = vcovHC, type = "HC3")
+coeftest(Two_Stage_IV, vcov = vcovHC, type = "HC4")
+
+```
+comments 
+
+## The GMM Model
+
+The next step will be the estimation of the GMM model with lagged regressors as internal instruments. The generalized method of moments (GMM) is mainly used in panel data econometrics to estimate dynamic models with a lagged endogenous variable. In a GMM estimation, there are “normal instruments” and “GMM instruments”. GMM instruments are indicated in the second part of the formula. The variables of the model that are not used as GMM instruments are used as normal instruments, with the same lag structure.
+
+```{r, warning=FALSE, message=FALSE}
+
+detach("package:dplyr", unload=TRUE)
+
+                  GMM = pgmm(         MaternalMortality ~ 
+
+                                      lag(MaternalMortality,       1:1) +        
+                                      lag(SafeWaterAccess,         0:2) +
+                                      lag(HealthExpenditure,       0:2) +
+                                      lag(PregnantWomenWithAnemia, 0:2) +        
+                                      lag(IncomePerCapita,         0:2)
+                                                                                 
+                                    | lag(MaternalMortality,       2:6),         
+
+                            data = wdi, 
+                           index = c("Country", "Year"), 
+                           model = "onestep", 
+                          effect = "individual"   )                                                                      
+
+
+
+      summary(GMM)
+
+```
+
+There are no problems with the instruments according to the Sargan test, as the p-value is greater than 0.25.
+
+## GMM with Logs and Lags of Logs
+
+```{r, warning=FALSE, message=FALSE}
+
+             GMM.logs = pgmm(         log(MaternalMortality) ~ 
+
+                                      lag(log(MaternalMortality),       1:1) +       
+                                      lag(log(SafeWaterAccess),         0:2) +
+                                      lag(log(HealthExpenditure),       0:2) +
+                                      lag(log(PregnantWomenWithAnemia), 0:2) +
+                                      lag(log(IncomePerCapita),         0:2)
+
+                                    | lag(log(MaternalMortality),       2:6),         
+
+                            data = wdi, 
+                           index = c("Country", "Year"), 
+                           model = "onestep", 
+                          effect = "individual"   )                                                                      
+
+
+
+      summary(GMM.logs)
+
+```
+
+The regressors are statistically insignificant.
+
+
+## IV Models in a Consolidated Table
+
+The models will be grouped side-by-side in a single consolidated table.
+
+```{r, warning=FALSE, message=FALSE}
+
+         screenreg(list(
+
+                    twoway_effects,
+                    Two_Stage_IV,
+                    GMM,
+                    GMM.logs
+                                  ),
+
+          custom.model.names = c(
+ 
+                    "FE two-way",
+                    "Two_Stage_IV",
+                    "GMM",
+                    "GMM.logs"
+                                 ))
+
+```
+
+# Conclusion 
+
+The 2SLS is the best model as all variables are significant and have the correct sign. Maternal mortality decreases with more access to safe water, higher health expenditure, and higher income per capita. On the other hand, maternal mortality increases with an increase in pregnant women with anemia.
+
+
